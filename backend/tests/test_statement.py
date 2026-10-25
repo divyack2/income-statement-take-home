@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ledger import load_ledger, parse_ledger
-from statement import account_totals
+from statement import per_account_totals
 
 REAL_LEDGER = Path(__file__).parent.parent / "ledger.json"
 
@@ -39,7 +39,7 @@ def amounts_for(*entries, start=JAN_1, end=MAR_31):
         "accounts": ACCOUNTS,
         "journal_entries": list(entries),
     })
-    return account_totals(ledger, start, end)
+    return per_account_totals(ledger, start, end)
 
 
 def sale(entry_id, date, amount, status="posted"):
@@ -116,7 +116,7 @@ def test_inactive_account_history_is_included():
 def test_q1_2026_golden_values():
     # Expected values are from a hand calculation over the ledger, not from this code.
     ledger = load_ledger(REAL_LEDGER)
-    assert account_totals(ledger, JAN_1, MAR_31) == {
+    assert per_account_totals(ledger, JAN_1, MAR_31) == {
         "4000": Decimal("35650.75"),  # JE-002 + JE-010 + JE-016 (JE-009 void, JE-001/024 outside)
         "4100": Decimal("3000.00"),  # JE-005, JE-014, JE-021 (not JE-004 billing)
         "4900": Decimal("-800.25"),  # JE-012 + JE-016

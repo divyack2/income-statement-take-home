@@ -1,9 +1,49 @@
 """Pure accounting functions. No FastAPI imports here."""
 
 import datetime
+from dataclasses import dataclass
 from decimal import Decimal
 
 from ledger import Ledger
+
+
+@dataclass(frozen=True)
+class StatementLine:
+    account: str  # account number
+    name: str
+    amount: Decimal
+
+
+@dataclass(frozen=True)
+class StatementSection:
+    label: str
+    total: Decimal
+    lines: tuple[StatementLine, ...]
+
+
+@dataclass(frozen=True)
+class Sections:
+    revenue: StatementSection
+    cost_of_goods_sold: StatementSection
+    operating_expenses: StatementSection
+    other_income: StatementSection
+
+
+@dataclass(frozen=True)
+class Subtotals:
+    gross_profit: Decimal
+    operating_income: Decimal
+    net_income: Decimal
+
+
+@dataclass(frozen=True)
+class IncomeStatement:
+    company: str
+    currency: str
+    start: datetime.date
+    end: datetime.date
+    sections: Sections
+    subtotals: Subtotals
 
 
 def per_account_totals(
