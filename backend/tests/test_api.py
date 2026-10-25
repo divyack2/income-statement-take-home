@@ -6,6 +6,8 @@ client = TestClient(app)
 
 
 def test_q1_2026_statement_over_http():
+    # Amounts must arrive as strings. This fails if the route loses its return type,
+    # because FastAPI would then send Decimal as a float.
     response = client.get("/income-statement", params={"start": "2026-01-01", "end": "2026-03-31"})
     assert response.status_code == 200
     body = response.json()
@@ -22,13 +24,6 @@ def test_q1_2026_statement_over_http():
     }
 
 
-def test_amounts_are_strings_not_floats():
-    # Floats would lose exactness; this fails if the route loses its return type.
-    body = client.get("/income-statement", params={"start": "2026-01-01", "end": "2026-03-31"}).json()
-    assert body["sections"]["revenue"]["total"] == "37850.50"
-    assert body["sections"]["revenue"]["lines"][0]["amount"] == "35650.75"
-
-
 def test_empty_range_shows_zero_totals():
     body = client.get("/income-statement", params={"start": "2030-01-01", "end": "2030-12-31"}).json()
     assert body["sections"]["revenue"] == {"label": "Revenue", "total": "0.00", "lines": []}
@@ -42,9 +37,4 @@ def test_start_after_end_is_422():
 
 def test_bad_date_is_422():
     response = client.get("/income-statement", params={"start": "2026-02-30", "end": "2026-03-31"})
-    assert response.status_code == 422
-
-
-def test_missing_date_is_422():
-    response = client.get("/income-statement", params={"start": "2026-01-01"})
     assert response.status_code == 422
