@@ -41,3 +41,4 @@
 - Frontend tests, and account numbers sorted numerically if the chart ever has mixed-length numbers.
 - More detailed handling + validation of the input ledger data (i.e. validating that the decimal format and datetime formats can be correctly parsed, enforce unique account IDs and journal entry IDs, etc).
 - Clean up the UI to be mobile-friendly/responsive.
+- The ledger is currently loaded into memory once at startup, and it works out fine because the data is small. To allow for scale and any data changes (if needed), I would put it into a database (e.g. Postgres) and it could also enforce things like unique ids as primary keys, line -> account as a foreign key, etc.
