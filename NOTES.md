@@ -6,6 +6,7 @@ Frontend: `cd frontend && npm run dev`
 ## Decisions
 - The JSON is treated as untrusted. It is parsed and validated once at startup into frozen, typed dataclasses, so the accounting code assumes valid data and has no defensive checks.
 - Response types are dataclasses; FastAPI serializes them through Pydantic because the route declares its return type, so Decimal goes over the wire as a string.
+- Accounts with no posted activity in the date range are left off the statement, rather than shown as 0.00 lines. All four sections always appear, with a 0.00 total when empty. An account whose activity nets to exactly 0.00 (e.g. a sale fully returned) is still shown, since it did have activity.
 
 ## Assumptions
 - Journal entry ids are unique. The loader does not check this, so a repeated entry would be counted twice.
