@@ -1,10 +1,21 @@
-"""Pure accounting functions. No FastAPI imports here."""
+"""Build an income statement from a validated ledger. Pure functions, no web code."""
 
 import datetime
 from dataclasses import dataclass
 from decimal import Decimal
 
-from ledger import Ledger
+from ledger import Ledger, Subtype
+
+# Which section each account goes in, decided by its subtype (never its type:
+# Interest Income is type revenue but belongs in Other income). Values are the
+# field names of Sections. Balance sheet accounts are in no section.
+SECTION_FOR_SUBTYPE: dict[Subtype, str] = {
+    "operating_revenue": "revenue",
+    "contra_revenue": "revenue",
+    "cogs": "cost_of_goods_sold",
+    "operating_expense": "operating_expenses",
+    "other_income": "other_income",
+}
 
 
 @dataclass(frozen=True)
