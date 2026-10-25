@@ -3,7 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from ledger import load_ledger, parse_ledger
-from statement import per_account_totals
+from statement import build_income_statement, calculate_account_totals
 
 REAL_LEDGER = Path(__file__).parent.parent / "ledger.json"
 
@@ -15,6 +15,7 @@ ACCOUNTS = [
     {"number": "2100", "name": "Deferred Revenue", "type": "liability", "subtype": "balance_sheet", "is_active": True},
     {"number": "4000", "name": "Product Revenue", "type": "revenue", "subtype": "operating_revenue", "is_active": True},
     {"number": "4900", "name": "Sales Returns", "type": "revenue", "subtype": "contra_revenue", "is_active": True},
+    {"number": "5000", "name": "Cost of Goods Sold", "type": "expense", "subtype": "cogs", "is_active": True},
     {"number": "6200", "name": "Software", "type": "expense", "subtype": "operating_expense", "is_active": True},
     {"number": "6300", "name": "Marketing (legacy)", "type": "expense", "subtype": "operating_expense", "is_active": False},
     {"number": "7000", "name": "Interest Income", "type": "revenue", "subtype": "other_income", "is_active": True},
@@ -32,14 +33,17 @@ def entry(entry_id, date, status, *lines):
     }
 
 
-def amounts_for(*entries, start=JAN_1, end=MAR_31):
-    ledger = parse_ledger({
+def make_ledger(*entries):
+    return parse_ledger({
         "company": "Test Co",
         "currency": "USD",
         "accounts": ACCOUNTS,
         "journal_entries": list(entries),
     })
-    return per_account_totals(ledger, start, end)
+
+
+def amounts_for(*entries, start=JAN_1, end=MAR_31):
+    return calculate_account_totals(make_ledger(*entries), start, end)
 
 
 def sale(entry_id, date, amount, status="posted"):
@@ -116,7 +120,7 @@ def test_inactive_account_history_is_included():
 def test_q1_2026_golden_values():
     # Expected values are from a hand calculation over the ledger, not from this code.
     ledger = load_ledger(REAL_LEDGER)
-    assert per_account_totals(ledger, JAN_1, MAR_31) == {
+    assert calculate_account_totals(ledger, JAN_1, MAR_31) == {
         "4000": Decimal("35650.75"),  # JE-002 + JE-010 + JE-016 (JE-009 void, JE-001/024 outside)
         "4100": Decimal("3000.00"),  # JE-005, JE-014, JE-021 (not JE-004 billing)
         "4900": Decimal("-800.25"),  # JE-012 + JE-016
@@ -127,3 +131,73 @@ def test_q1_2026_golden_values():
         "6300": Decimal("2500.10"),  # JE-008, inactive account
         "7000": Decimal("42.18"),  # JE-023
     }
+
+
+def test_subtotals_combine_sections_with_the_right_signs():
+    ledger = make_ledger(
+        sale("JE-1", "2026-01-05", "1000.00"),
+        entry("JE-2", "2026-01-06", "posted", ("4900", "100.00", "0.00"), ("1000", "0.00", "100.00")),
+        entry("JE-3", "2026-01-07", "posted", ("5000", "300.00", "0.00"), ("1000", "0.00", "300.00")),
+        entry("JE-4", "2026-01-08", "posted", ("6200", "200.00", "0.00"), ("1000", "0.00", "200.00")),
+        entry("JE-5", "2026-01-09", "posted", ("1000", "10.00", "0.00"), ("7000", "0.00", "10.00")),
+    )
+    statement = build_income_statement(ledger, JAN_1, MAR_31)
+    assert statement.sections.revenue.total == Decimal("900.00")
+    assert statement.sections.cost_of_goods_sold.total == Decimal("300.00")
+    assert statement.sections.operating_expenses.total == Decimal("200.00")
+    assert statement.sections.other_income.total == Decimal("10.00")
+    assert statement.subtotals.gross_profit == Decimal("600.00")
+    assert statement.subtotals.operating_income == Decimal("400.00")
+    assert statement.subtotals.net_income == Decimal("410.00")
+
+
+def test_interest_income_goes_in_other_income_not_revenue():
+    ledger = make_ledger(entry("JE-1", "2026-03-31", "posted", ("1000", "42.18", "0.00"), ("7000", "0.00", "42.18")))
+    statement = build_income_statement(ledger, JAN_1, MAR_31)
+    assert statement.sections.revenue.lines == []
+    assert [line.account for line in statement.sections.other_income.lines] == ["7000"]
+
+
+def test_empty_range_has_all_sections_with_zero_totals():
+    statement = build_income_statement(make_ledger(), JAN_1, MAR_31)
+    for section in (
+        statement.sections.revenue,
+        statement.sections.cost_of_goods_sold,
+        statement.sections.operating_expenses,
+        statement.sections.other_income,
+    ):
+        assert section.lines == []
+        assert str(section.total) == "0.00"
+    assert str(statement.subtotals.net_income) == "0.00"
+
+
+def test_q1_2026_golden_statement():
+    # Expected values are from a hand calculation over the ledger, not from this code.
+    statement = build_income_statement(load_ledger(REAL_LEDGER), JAN_1, MAR_31)
+    sections = statement.sections
+
+    def lines(section):
+        return [(line.account, line.name, line.amount) for line in section.lines]
+
+    assert statement.company == "Northwind Coffee Roasters"
+    assert lines(sections.revenue) == [
+        ("4000", "Product Revenue", Decimal("35650.75")),
+        ("4100", "Subscription Revenue", Decimal("3000.00")),
+        ("4900", "Sales Returns & Discounts", Decimal("-800.25")),
+    ]
+    assert lines(sections.cost_of_goods_sold) == [("5000", "Cost of Goods Sold", Decimal("14272.75"))]
+    assert lines(sections.operating_expenses) == [
+        ("6000", "Salaries", Decimal("55500.00")),
+        ("6100", "Rent", Decimal("9000.00")),
+        ("6200", "Software", Decimal("1099.97")),
+        ("6300", "Marketing (legacy)", Decimal("2500.10")),
+    ]
+    assert lines(sections.other_income) == [("7000", "Interest Income", Decimal("42.18"))]
+
+    assert sections.revenue.total == Decimal("37850.50")
+    assert sections.cost_of_goods_sold.total == Decimal("14272.75")
+    assert sections.operating_expenses.total == Decimal("68100.07")
+    assert sections.other_income.total == Decimal("42.18")
+    assert statement.subtotals.gross_profit == Decimal("23577.75")
+    assert statement.subtotals.operating_income == Decimal("-44522.32")
+    assert statement.subtotals.net_income == Decimal("-44480.14")

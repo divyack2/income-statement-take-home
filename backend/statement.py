@@ -25,11 +25,12 @@ class StatementLine:
     amount: Decimal
 
 
-@dataclass(frozen=True)
+# Not frozen: build_income_statement fills in lines and total as it goes.
+@dataclass
 class StatementSection:
     label: str
     total: Decimal
-    lines: tuple[StatementLine, ...]
+    lines: list[StatementLine]
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class IncomeStatement:
     subtotals: Subtotals
 
 
-def per_account_totals(
+def calculate_account_totals(
     ledger: Ledger, start: datetime.date, end: datetime.date
 ) -> dict[str, Decimal]:
     """Sum each income statement account's posted activity from start to end, inclusive.
@@ -83,3 +84,49 @@ def per_account_totals(
                 amount = -amount
             amounts[line.account] = amounts.get(line.account, Decimal("0")) + amount
     return amounts
+
+
+def build_income_statement(
+    ledger: Ledger, start: datetime.date, end: datetime.date
+) -> IncomeStatement:
+    account_totals = calculate_account_totals(ledger, start, end)
+
+    # Totals start at 0.00 (not 0) so an empty section shows as "0.00".
+    revenue = StatementSection(label="Revenue", total=Decimal("0.00"), lines=[])
+    cost_of_goods_sold = StatementSection(label="Cost of goods sold", total=Decimal("0.00"), lines=[])
+    operating_expenses = StatementSection(label="Operating expenses", total=Decimal("0.00"), lines=[])
+    other_income = StatementSection(label="Other income", total=Decimal("0.00"), lines=[])
+    section_by_key = {
+        "revenue": revenue,
+        "cost_of_goods_sold": cost_of_goods_sold,
+        "operating_expenses": operating_expenses,
+        "other_income": other_income,
+    }
+
+    for account_number, amount in sorted(account_totals.items()):
+        account = ledger.accounts[account_number]
+        section = section_by_key[SECTION_FOR_SUBTYPE[account.subtype]]
+        section.lines.append(StatementLine(account=account_number, name=account.name, amount=amount))
+        section.total += amount
+
+    gross_profit = revenue.total - cost_of_goods_sold.total
+    operating_income = gross_profit - operating_expenses.total
+    net_income = operating_income + other_income.total
+
+    return IncomeStatement(
+        company=ledger.company,
+        currency=ledger.currency,
+        start=start,
+        end=end,
+        sections=Sections(
+            revenue=revenue,
+            cost_of_goods_sold=cost_of_goods_sold,
+            operating_expenses=operating_expenses,
+            other_income=other_income,
+        ),
+        subtotals=Subtotals(
+            gross_profit=gross_profit,
+            operating_income=operating_income,
+            net_income=net_income,
+        ),
+    )
